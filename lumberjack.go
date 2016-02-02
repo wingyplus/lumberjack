@@ -22,6 +22,8 @@
 package lumberjack
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -75,12 +77,12 @@ type Logger struct {
 	// rotated. It defaults to 100 megabytes.
 	MaxSize int `json:"maxsize" yaml:"maxsize"`
 
-	// MaxAge is the maximum number of days to retain old log files based on the
+	// MaxAge is the maximum duration to retain old log files based on the
 	// timestamp encoded in their filename.  Note that a day is defined as 24
 	// hours and may not exactly correspond to calendar days due to daylight
 	// savings, leap seconds, etc. The default is not to remove old log files
 	// based on age.
-	MaxAge int `json:"maxage" yaml:"maxage"`
+	MaxAge time.Duration `json:"maxage" yaml:"maxage"`
 
 	// MaxBackups is the maximum number of old log files to retain.  The default
 	// is to retain all old log files (though MaxAge may still cause them to get
@@ -109,6 +111,75 @@ var (
 	// to disk.
 	megabyte = 1024 * 1024
 )
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (l *Logger) UnmarshalJSON(b []byte) error {
+	var m map[string]interface{}
+
+	if err := json.Unmarshal(b, &m); err != nil {
+		return err
+	}
+
+	return l.decodeMap(m)
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler
+func (l *Logger) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var m map[string]interface{}
+
+	if err := unmarshal(&m); err != nil {
+		return err
+	}
+
+	return l.decodeMap(m)
+}
+
+// UnmarshalTOML implements toml.Unmarshaler.
+func (l *Logger) UnmarshalTOML(v interface{}) error {
+	var m map[string]interface{}
+	var ok bool
+
+	if m, ok = v.(map[string]interface{}); !ok {
+		return errors.New("cannot convert to map[string]interface{}")
+	}
+
+	return l.decodeMap(m)
+}
+
+func (l *Logger) decodeMap(m map[string]interface{}) error {
+	if filename, ok := m["filename"]; ok {
+		l.Filename = filename.(string)
+	}
+	if maxsize, ok := m["maxsize"]; ok {
+		l.decodeInt(&l.MaxSize, maxsize)
+	}
+	if maxage, ok := m["maxage"]; ok {
+		d, err := time.ParseDuration(maxage.(string))
+		if err != nil {
+			return err
+		}
+		l.MaxAge = d
+	}
+	if maxbackups, ok := m["maxbackups"]; ok {
+		l.decodeInt(&l.MaxBackups, maxbackups)
+	}
+	if localtime, ok := m["localtime"]; ok {
+		l.LocalTime = localtime.(bool)
+	}
+
+	return nil
+}
+
+func (l *Logger) decodeInt(n *int, v interface{}) {
+	switch v.(type) {
+	case int:
+		*n = v.(int)
+	case float64:
+		*n = int(v.(float64))
+	case int64:
+		*n = int(v.(int64))
+	}
+}
 
 // Write implements io.Writer.  If a write would cause the log file to be larger
 // than MaxSize, the file is closed, renamed to include a timestamp of the
@@ -296,9 +367,7 @@ func (l *Logger) cleanup() error {
 		files = files[:l.MaxBackups]
 	}
 	if l.MaxAge > 0 {
-		diff := time.Duration(int64(24*time.Hour) * int64(l.MaxAge))
-
-		cutoff := currentTime().Add(-1 * diff)
+		cutoff := currentTime().Add(-1 * l.MaxAge)
 
 		for _, f := range files {
 			if f.timestamp.Before(cutoff) {

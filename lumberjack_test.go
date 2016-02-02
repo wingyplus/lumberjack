@@ -375,7 +375,7 @@ func TestMaxAge(t *testing.T) {
 	l := &Logger{
 		Filename: filename,
 		MaxSize:  10,
-		MaxAge:   1,
+		MaxAge:   1 * 24 * time.Hour,
 	}
 	defer l.Close()
 	b := []byte("boo!")
@@ -577,7 +577,7 @@ func TestJson(t *testing.T) {
 {
 	"filename": "foo",
 	"maxsize": 5,
-	"maxage": 10,
+	"maxage": "240h",
 	"maxbackups": 3,
 	"localtime": true
 }`[1:])
@@ -587,7 +587,7 @@ func TestJson(t *testing.T) {
 	isNil(err, t)
 	equals("foo", l.Filename, t)
 	equals(5, l.MaxSize, t)
-	equals(10, l.MaxAge, t)
+	equals(10*24*time.Hour, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 }
@@ -596,7 +596,7 @@ func TestYaml(t *testing.T) {
 	data := []byte(`
 filename: foo
 maxsize: 5
-maxage: 10
+maxage: 240h
 maxbackups: 3
 localtime: true`[1:])
 
@@ -605,7 +605,7 @@ localtime: true`[1:])
 	isNil(err, t)
 	equals("foo", l.Filename, t)
 	equals(5, l.MaxSize, t)
-	equals(10, l.MaxAge, t)
+	equals(10*24*time.Hour, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
 }
@@ -614,19 +614,18 @@ func TestToml(t *testing.T) {
 	data := `
 filename = "foo"
 maxsize = 5
-maxage = 10
+maxage = "240h"
 maxbackups = 3
 localtime = true`[1:]
 
 	l := Logger{}
-	md, err := toml.Decode(data, &l)
+	_, err := toml.Decode(data, &l)
 	isNil(err, t)
 	equals("foo", l.Filename, t)
 	equals(5, l.MaxSize, t)
-	equals(10, l.MaxAge, t)
+	equals(10*24*time.Hour, l.MaxAge, t)
 	equals(3, l.MaxBackups, t)
 	equals(true, l.LocalTime, t)
-	equals(0, len(md.Undecoded()), t)
 }
 
 // makeTempDir creates a file with a semi-unique name in the OS temp directory.
